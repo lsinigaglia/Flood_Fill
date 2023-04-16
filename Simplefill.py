@@ -1,13 +1,17 @@
-from PIL import Image
+from PIL import Image #requires pip install PIL
+from PIL import ImageChops #requires pip install PIL
 import os
 import concurrent.futures
+from collections import defaultdict 
+
 
 def adjust_pixel_color(pixel, threshold=63):
     r, g, b = pixel
     if (r + g + b) // 3 > threshold:
-        return (255, 255, 255)  # white
+        return (255, 255, 255)  # white with original alpha
     else:
-        return (0, 0, 0)  # black
+        return (0, 0, 0)  # black with original alpha
+
 
 def flood_fill(image, x, y, target_color, replacement_color, visited):
     stack = [(x, y)]
@@ -49,46 +53,79 @@ def mark_edge_connected_black_pixels(image, visited):
         if pixel == (0, 0, 0):
             flood_fill(image, x, y, (0, 0, 0), (0, 0, 0), visited)
 
-def process_image(image_path):
-    image = Image.open(image_path)
-    width, height = image.size
+'''function with no PIL library the complexity is O(N*W*H) in both cases 
+   but the one but the underlying implementation of the uncommented one
+   is optimized in C for better performance
+def merge_images(image_group): 
+    base_image = image_group[0]
+    width, height = base_image.size
 
-    # Adjust image to be black and white based on the threshold
-    for x in range(width):
-        for y in range(height):
-            pixel = image.getpixel((x, y))
-            image.putpixel((x, y), adjust_pixel_color(pixel))
+    for other_image in image_group[1:]:
+        for x in range(width):
+            for y in range(height):
+                base_pixel = base_image.getpixel((x, y))
+                other_pixel = other_image.getpixel((x, y))
 
-    # Mark edge-connected black pixels as visited
-    visited = set()
-    mark_edge_connected_black_pixels(image, visited)
+                if other_pixel == (255, 255, 255):
+                    base_image.putpixel((x, y), other_pixel)
 
-    # Fill holes using flood_fill algorithm
-    for x in range(width):
-        for y in range(height):
-            pixel = image.getpixel((x, y))
-            if pixel == (0, 0, 0) and (x, y) not in visited:
-                flood_fill(image, x, y, (0, 0, 0), (255, 255, 255), visited)
+    return base_image'''
+    
 
-    # Save the processed image
-    # (No changes needed in this part)
+def merge_images(image_group):
+    base_image = image_group[0]
 
-    #output_path = os.path.splitext(image_path)[0] + "_processed.png"
-    output_path = os.path.join(os.path.dirname(image_path), "processed_" + os.path.basename(image_path))
-    output_path = os.path.splitext(output_path)[0] + ".png"
-    image.save(output_path)
-    print(f"Processed image saved to: {output_path}")
+    for other_image in image_group[1:]:
+        base_image = ImageChops.lighter(base_image, other_image)
+
+    return base_image
+
+
+
+def process_and_combine(image_paths, base_name):
+    images = [Image.open(image_path).convert("RGB") for image_path in image_paths]
+    processed_images = []
+
+    for image in images:
+        width, height = image.size
+
+        # Adjust image to be black and white based on the threshold
+        for x in range(width):
+            for y in range(height):
+                pixel = image.getpixel((x, y))
+                image.putpixel((x, y), adjust_pixel_color(pixel))
+
+        # Mark edge-connected black pixels as visited
+        visited = set()
+        mark_edge_connected_black_pixels(image, visited)
+
+        # Fill holes using flood_fill algorithm
+        for x in range(width):
+            for y in range(height):
+                pixel = image.getpixel((x, y))
+                if pixel == (0, 0, 0) and (x, y) not in visited:
+                    flood_fill(image, x, y, (0, 0, 0), (255, 255, 255), visited)
+
+        processed_images.append(image)
+
+    merged_image = merge_images(processed_images)
+    output_path = os.path.join(os.path.dirname(image_paths[0]), f"{base_name}_merged.png")
+    merged_image.save(output_path)
+    print(f"Merged image saved to: {output_path}")
+
 
 def main():
     cwd = os.getcwd()
     subdir_name = "Test_images"
     input_dir = os.path.join(cwd, subdir_name)
-    image_paths = []
+    image_groups = defaultdict(list)
 
     for filename in os.listdir(input_dir):
+        print(f"Checking file: {filename}")
         if filename.endswith(".png"):
             file_path = os.path.join(input_dir, filename)
-            image_paths.append(file_path)
+            base_name = "_".join(filename.split("_")[:-3])
+            image_groups[base_name].append(file_path)
         else:
             continue
 
@@ -97,9 +134,16 @@ def main():
 
     # Use ThreadPoolExecutor to run tasks concurrently
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as executor:
-        executor.map(process_image, image_paths)
+        for base_name, image_paths in image_groups.items():
+            executor.submit(process_and_combine, image_paths, base_name)
 
-    print("All images processed.")
+    print("All images processed and merged.")
+
 
 if __name__ == "__main__":
     main()
+
+
+
+
+
