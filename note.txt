@@ -1,0 +1,3 @@
+https://github.com/csala/module-flattener se la src è sparpagliata usa questo. Compatta una libreria
+
+fare il merge prima --> levare PIL --> Merge nei channel della pgn 

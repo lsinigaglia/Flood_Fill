@@ -1,8 +1,11 @@
-from PIL import Image #requires pip install PIL
-from PIL import ImageChops #requires pip install PIL
+from PIL import Image
+from PIL import ImageChops
 import os
+from PIL.Image import core as _imaging
+from PIL import Image
+from PIL import ImageChops
 import concurrent.futures
-from collections import defaultdict 
+from collections import defaultdict
 
 
 def adjust_pixel_color(pixel, threshold=63):
@@ -82,33 +85,32 @@ def merge_images(image_group):
 
 
 
-def process_and_combine(image_paths, base_name):
+def merge_and_process(image_paths, base_name):
     images = [Image.open(image_path).convert("RGB") for image_path in image_paths]
-    processed_images = []
 
-    for image in images:
-        width, height = image.size
+    # Merge images
+    merged_image = merge_images(images)
 
-        # Adjust image to be black and white based on the threshold
-        for x in range(width):
-            for y in range(height):
-                pixel = image.getpixel((x, y))
-                image.putpixel((x, y), adjust_pixel_color(pixel))
+    # Process merged image
+    width, height = merged_image.size
 
-        # Mark edge-connected black pixels as visited
-        visited = set()
-        mark_edge_connected_black_pixels(image, visited)
+    # Adjust image to be black and white based on the threshold
+    for x in range(width):
+        for y in range(height):
+            pixel = merged_image.getpixel((x, y))
+            merged_image.putpixel((x, y), adjust_pixel_color(pixel))
 
-        # Fill holes using flood_fill algorithm
-        for x in range(width):
-            for y in range(height):
-                pixel = image.getpixel((x, y))
-                if pixel == (0, 0, 0) and (x, y) not in visited:
-                    flood_fill(image, x, y, (0, 0, 0), (255, 255, 255), visited)
+    # Mark edge-connected black pixels as visited
+    visited = set()
+    mark_edge_connected_black_pixels(merged_image, visited)
 
-        processed_images.append(image)
+    # Fill holes using flood_fill algorithm
+    for x in range(width):
+        for y in range(height):
+            pixel = merged_image.getpixel((x, y))
+            if pixel == (0, 0, 0) and (x, y) not in visited:
+                flood_fill(merged_image, x, y, (0, 0, 0), (255, 255, 255), visited)
 
-    merged_image = merge_images(processed_images)
     output_path = os.path.join(os.path.dirname(image_paths[0]), f"{base_name}_merged.png")
     merged_image.save(output_path)
     print(f"Merged image saved to: {output_path}")
@@ -135,7 +137,7 @@ def main():
     # Use ThreadPoolExecutor to run tasks concurrently
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as executor:
         for base_name, image_paths in image_groups.items():
-            executor.submit(process_and_combine, image_paths, base_name)
+            executor.submit(merge_and_process, image_paths, base_name)
 
     print("All images processed and merged.")
 
